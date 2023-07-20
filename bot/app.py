@@ -2,6 +2,8 @@ import os
 import pyrogram
 import logging
 from pyrogram import enums
+from pyrogram.errors import MediaEmpty
+import requests
 
 from movie_poster import get_poster
 from search_engine import generate_url
@@ -16,7 +18,7 @@ app = pyrogram.Client("bot_token", bot_token=bot_token)
 
 def admin_only(func):
     async def wrapper(client, message):
-        if message.from_user.id == int("852259634"):
+        if message.from_user.id in [852259634, 5487058679]:
             await func(client, message)
         else:
             await client.send_photo(photo='./img/CoSxK.jpg',
@@ -28,10 +30,12 @@ def admin_only(func):
     return wrapper
 
 
+# chat action for uploading photo
 async def send_uploading_action(client, chat_id):
     await client.send_chat_action(chat_id, enums.ChatAction.UPLOAD_PHOTO)
 
 
+# chat action for typing
 async def send_typing_action(client, chat_id):
     await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
 
@@ -42,7 +46,8 @@ async def send_typing_action(client, chat_id):
 async def start_command_handler(client, message):
     # Display the initial video and buttons
     bot_message = await client.send_message(message.chat.id,
-                                            "Welcome to The Torrent To TG Bot use /search {query} to get started.",
+                                            "Welcome to The Torrent To TG Bot use /search {query} to get started.,"
+                                            "This bot is made by @DTMK_C",
                                             reply_to_message_id=message.id)
 
 
@@ -57,7 +62,6 @@ async def search_command_handler(client, message):
     query = message.text.split()
     if len(query) > 1:
         query = " ".join(query[1:])
-        await send_uploading_action(client, message.chat.id)
         poster = get_poster(query)
         await send_typing_action(client, message.chat.id)
         results = generate_url(query)
@@ -68,6 +72,7 @@ async def search_command_handler(client, message):
                 "results": results,
                 "current_index": 0
             }
+            await send_uploading_action(client, message.chat.id)
             await send_result_message(client, message, message.chat.id, poster, query, 0)
     else:
         await client.send_message(
@@ -102,13 +107,32 @@ async def send_result_message(client, message, chat_id, poster, query, current_i
             text="Previous",
             callback_data="prev"
         ))
-
-    await client.send_photo(
-        chat_id,
-        photo=poster if poster else "./img/not_found.png",
-        caption=f"{query}\nName: {result['name']}\nSeeders: {result['seeder']} | Leechers: {result['leecher']}\nSize: {result['size']}\nAge: {result['age']}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard)
-    )
+    try:
+        await client.send_photo(
+            chat_id,
+            photo=poster if poster else "./img/not_found.png",
+            caption=f"Name: {result['name']}\n\n🟢 Seeders: {result['seeder']} |🔴 Leechers: {result['leecher']}\n🎥 Size: "
+                    f"{result['size']}\n⬆️ Uploaded: {result['age']} ago!\n🔞 NSFW: { '✅' if result['nsfw'] else '❌'}\n",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard),
+            reply_to_message_id=message.id,
+        )
+    except MediaEmpty:
+        download_image = requests.get(poster)
+        with open('./img/poster.jpg', 'wb') as f:
+            f.write(download_image.content)
+        await client.send_photo(
+            chat_id,
+            photo="./img/poster.jpg",
+            caption=f"Name: {result['name']}\n\n🟢 Seeders: {result['seeder']} |🔴 Leechers: {result['leecher']}\n🎥 Size: "
+                    f"{result['size']}\n⬆️ Uploaded: {result['age']} ago!\n🔞 NSFW: { '✅' if result['nsfw'] else '❌'}\n",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard),
+            reply_to_message_id=message.id,
+        )
+        os.remove('./img/poster.jpg')
+    except Exception as e:
+        await client.send_message(text="Some Error Occured Try Again !\nError info: " + str(e),
+                                  chat_id=chat_id,
+                                  reply_to_message_id=message.id)
 
 
 # Handle callback queries
@@ -129,14 +153,35 @@ async def handle_callback_query(client, callback_query):
 
         user_data[user_id]["current_index"] = current_index
 
+        results = user_data[user_id]["results"]
+        result = results[current_index]
+
+        # Create the inline keyboard with "Next" and "Download" buttons
+        inline_keyboard = [
+            [
+                InlineKeyboardButton(
+                    text="Next",
+                    callback_data="next"
+                ),
+                InlineKeyboardButton(
+                    text="Download",
+                    callback_data="download"
+                )
+            ]
+        ]
+
+        # Add "Prev" button if current_index is greater than 0
+        if current_index > 0:
+            inline_keyboard[0].insert(0, InlineKeyboardButton(
+                text="Previous",
+                callback_data="prev"
+            ))
+
         # Send the updated result message
-        await send_result_message(
-            client,
-            callback_query,
-            callback_query.from_user.id,
-            None,  # Pass None for poster to use the same poster as the initial message
-            callback_query.message.caption.split("\nName:")[0],  # Extract the query from the initial message
-            current_index
+        await callback_query.message.edit_caption(
+            caption=f"Name: {result['name']}\n\n🟢 Seeders: {result['seeder']} |🔴 Leechers: {result['leecher']}\n🎥 Size: "
+                    f"{result['size']}\n⬆️ Uploaded: {result['age']} ago!\n🔞 NSFW: { '✅ - Yes' if result['nsfw'] else '❌- NO'}\n",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard)
         )
 
         # Answer the callback query to remove the "waiting" status
