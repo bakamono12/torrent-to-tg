@@ -72,7 +72,7 @@ def generate_url(title):
     for var_name, var_value in matches:
         if len(var_name) > 1:
             os.remove('script.js')
-            url = page_url + "/" + var_value + "/" + title + f"/{part2}/0/NONE/NONE/1?_={current_time}"
+            url = page_url + "/" + var_value + "/" + title + f"/{part2}/0/SEED/NONE/1?_={current_time}"
             return get_movie_results(url)
         else:
             continue
