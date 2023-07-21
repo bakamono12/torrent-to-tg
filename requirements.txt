@@ -1,1 +1,15 @@
-pyrogram
+beautifulsoup4>=4.12.2
+certifi>=2023.5.7
+charset-normalizer>=3.2.0
+EditorConfig>=0.12.3
+fake-useragent>=1.1.3
+idna>=3.4
+jsbeautifier>=1.14.8
+pyaes>=1.6.1
+Pyrogram>=2.0.106
+PySocks>=1.7.1
+requests>=2.31.0
+six>=1.16.0
+soupsieve>=2.4.1
+TgCrypto>=1.2.5
+urllib3>=2.0.3

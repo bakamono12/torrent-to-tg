@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import string
@@ -7,6 +8,9 @@ import time
 from fake_useragent import UserAgent
 from bs4 import BeautifulSoup
 import jsbeautifier
+
+# keep track of latest url
+latest_url_file = "latest_urls.jsonl"
 
 
 def generate_random_string(length):
@@ -37,8 +41,31 @@ def get_movie_results(url):
 
 
 def generate_url(title):
+    if os.path.exists(latest_url_file):
+        with open(latest_url_file, 'r') as f:
+            latest_url = f.read()
+        last_url = json.loads(latest_url)[-1]
+        if last_url:
+            url = last_url['url']
+            if url:
+                random_str = generate_random_string(8)
+                url += "/" + title + f"/{random_str}/0/SEED/NONE/1?_={time.time()}"
+                results = get_movie_results(url)
+                if results:
+                    return results
+                else:
+                    results = new_url(title)
+                    return results
+            else:
+                return None
+    else:
+        results = new_url(title)
+        return results
+
+
+def new_url(title):
+    # Generate latest URL
     ua = UserAgent().random
-    # Generate timestamp for URL
     current_time = int(time.time())
     part2 = generate_random_string(8)
     headers = {
@@ -63,19 +90,33 @@ def generate_url(title):
     get_page = requests.get(src)
     with open('script.js', 'w') as f:
         f.write(get_page.text)
-    # url: "/" + bPMSrddX + "/newsfeed", capture the variable name
     pattern = r'var\s+(\w+)\s*=\s*"([^"]+)";'
     pretty_js = jsbeautifier.beautify_file('script.js')
 
-    # Step 4: Search for the dynamic variable assignment in the JavaScript code
     matches = re.findall(pattern, pretty_js)
     for var_name, var_value in matches:
         if len(var_name) > 1:
             os.remove('script.js')
+            save_url(page_url + "/" + var_value)
             url = page_url + "/" + var_value + "/" + title + f"/{part2}/0/SEED/NONE/1?_={current_time}"
             return get_movie_results(url)
         else:
             continue
 
 
-# generate_url("The%20Matrix")
+def save_url(url):
+    # save the latest url in file
+    if os.path.exists(latest_url_file):
+        with open(latest_url_file, 'r') as f:
+            latest_url = f.read()
+        latest_url = json.loads(latest_url)
+        latest_url.append({"url": url})
+        with open(latest_url_file, 'w') as f:
+            f.write(json.dumps(latest_url))
+    else:
+        with open(latest_url_file, 'w') as f:
+            f.write(json.dumps([{"url": url}]))
+
+
+data = generate_url("Men%20in%20Black")
+print(data)

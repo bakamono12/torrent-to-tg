@@ -3,11 +3,13 @@ import pyrogram
 import logging
 from pyrogram import enums
 from pyrogram.errors import MediaEmpty
+from pyrogram.filters import filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 
 from movie_poster import get_poster
 from search_engine import generate_url
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from downloader import download_torrent
 
 # header level stuff for api
 logging.getLogger("pyrogram").setLevel(logging.WARNING)
@@ -38,6 +40,12 @@ async def send_uploading_action(client, chat_id):
 # chat action for typing
 async def send_typing_action(client, chat_id):
     await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
+
+# filter action for next and prev button
+def callback_data(_, __, query):
+    return query.data == "next" or query.data == "prev"
+
+filter_for_next_and_prev = filters.create(callback_data)
 
 
 # start command handler
@@ -135,8 +143,8 @@ async def send_result_message(client, message, chat_id, poster, query, current_i
                                   reply_to_message_id=message.id)
 
 
-# Handle callback queries
-@app.on_callback_query()
+# Handle callback queries for prev and next buttons
+@app.on_callback_query(filter_for_next_and_prev)
 async def handle_callback_query(client, callback_query):
     query_data = callback_query.data
     user_id = callback_query.from_user.id
@@ -185,10 +193,29 @@ async def handle_callback_query(client, callback_query):
         )
 
         # Answer the callback query to remove the "waiting" status
-        await callback_query.answer()
+        if query_data == "next":
+            await callback_query.answer("Fetched the next results !")
+        elif query_data == "prev":
+            await callback_query.answer("Fetched the previous results !")
     else:
         # Handle the case if the user data doesn't exist in the dictionary (possibly due to bot restart)
         await callback_query.answer("Your session has expired. Please search again.")
 
+
+# handle callback query for download button
+@app.on_callback_query(pyrogram.filters.regex("download"))
+async def download_callback_query(client, callback_query):
+    user_id = callback_query.from_user.id
+    if user_id in user_data:
+        current_index = user_data[user_id]["current_index"]
+        results = user_data[user_id]["results"]
+        result = results[current_index]
+        await callback_query.message.edit_caption(
+            caption=f"Downloading {result['name']}...",
+        )
+        await callback_query.answer("Downloading...")
+        await download_torrent(client, callback_query.message, result['magnet'])
+    else:
+        await callback_query.answer("Your session has expired. Please search again.")
 
 app.run()
