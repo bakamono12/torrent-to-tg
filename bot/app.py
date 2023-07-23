@@ -1,11 +1,14 @@
 import os
+import subprocess
+
 import pyrogram
 import logging
 from pyrogram import enums
 from pyrogram.errors import MediaEmpty
-from pyrogram.filters import filters
+from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
+from bs4 import BeautifulSoup
 
 from movie_poster import get_poster
 from search_engine import generate_url
@@ -20,7 +23,7 @@ app = pyrogram.Client("bot_token", bot_token=bot_token)
 
 def admin_only(func):
     async def wrapper(client, message):
-        if message.from_user.id in [852259634, 5487058679]:
+        if message.from_user.id in [852259634, 5487058679] or message.chat.id in [-991423493]:
             await func(client, message)
         else:
             await client.send_photo(photo='./img/CoSxK.jpg',
@@ -73,7 +76,7 @@ async def search_command_handler(client, message):
         poster = get_poster(query)
         await send_typing_action(client, message.chat.id)
         results = generate_url(query)
-        print(results)
+        # print(results)
         if results:
             # Initialize the user-specific data when sending the first message
             user_data[message.from_user.id] = {
@@ -82,11 +85,17 @@ async def search_command_handler(client, message):
             }
             await send_uploading_action(client, message.chat.id)
             await send_result_message(client, message, message.chat.id, poster, query, 0)
+        else:
+            await client.send_message(
+                message.chat.id,
+                "Unfortunately, we couldn't find any results for your search query.",
+                reply_to_message_id=message.id
+            )
     else:
         await client.send_message(
             message.chat.id,
-            "Please enter a search query.",
-            reply_to_message_id=message.message_id
+            "Please enter a search query.\n\nExample: /search The Matrix",
+            reply_to_message_id=message.id
         )
 
 
@@ -118,7 +127,7 @@ async def send_result_message(client, message, chat_id, poster, query, current_i
     try:
         await client.send_photo(
             chat_id,
-            photo=poster if poster else "./img/not_found.png",
+            photo=poster if poster else "./img/404.png",
             caption=f"Name: {result['name']}\n\n🟢 Seeders: {result['seeder']} |🔴 Leechers: {result['leecher']}\n🎥 Size: "
                     f"{result['size']}\n⬆️ Uploaded: {result['age']} ago!\n🔞 NSFW: { '✅' if result['nsfw'] else '❌'}\n",
             reply_markup=InlineKeyboardMarkup(inline_keyboard),
@@ -187,8 +196,8 @@ async def handle_callback_query(client, callback_query):
 
         # Send the updated result message
         await callback_query.message.edit_caption(
-            caption=f"Name: {result['name']}\n\n🟢 Seeders: {result['seeder']} |🔴 Leechers: {result['leecher']}\n🎥 Size: "
-                    f"{result['size']}\n⬆️ Uploaded: {result['age']} ago!\n🔞 NSFW: { '✅ - Yes' if result['nsfw'] else '❌- NO'}\n",
+            caption=f"Name: {result['name']}\n\n🟢 Seeds: {result['seeder']} |🔴 Leechs: {result['leecher']}\n🎥 Size: "
+                    f"{result['size']}\n⬆️ Uploaded: {result['age']} ago!\n🔞 NSFW: { '✅' if result['nsfw'] else '❌'}\n",
             reply_markup=InlineKeyboardMarkup(inline_keyboard)
         )
 
@@ -213,8 +222,62 @@ async def download_callback_query(client, callback_query):
         await callback_query.message.edit_caption(
             caption=f"Downloading {result['name']}...",
         )
-        await callback_query.answer("Downloading...")
-        await download_torrent(client, callback_query.message, result['magnet'])
+        try:
+            if result['magnet']:
+                for torrent in download_torrent(result['magnet'], result['name']):
+                    await callback_query.message.edit_caption(
+                        caption=torrent,
+                    )
+                # once the download is complete, zip the file and send it to the user
+                await callback_query.message.edit_caption(
+                    caption=f"Uploading {result['name']}...",
+                )
+                # find the file in the directory and zip it using the zip command
+                subprocess.run(["zip", "-r", f"{result['name']}.zip", f"./torrents/{result['name']}"])
+                # find the user who sent the query and send the file to him
+                await client.send_document(
+                    chat_id=callback_query.from_user.id,
+                    document=f"./{result['name']}.zip",
+                    caption=f"{result['name']}.zip",
+                    reply_to_message_id=callback_query.message.message_id,
+                )
+        except KeyError:
+            await callback_query.message.edit_caption(
+                caption=f"Fetching the magnet link for {result['name']}...",
+            )
+            fetch_magnet = requests.get(result['url'])
+            soup = BeautifulSoup(fetch_magnet.content, "html.parser")
+            title = soup.find('h1').text
+            magnet_link_tag = soup.find_all('a', href=lambda href: href and href.startswith("magnet:?"))
+            if magnet_link_tag:
+                magnet_link = magnet_link_tag[0].get("href")
+                for torrent in download_torrent(magnet_link, title):
+                    try:
+                        await callback_query.message.edit_caption(
+                            caption=torrent,
+                        )
+                    except Exception as e:
+                        await callback_query.message.edit_caption(
+                            caption=f"Error Occurred while updating the progress.\nHere's a cookie for you 🍪.",
+                        )
+                # once the download is complete, zip the file and send it to the user
+                await callback_query.message.edit_caption(
+                    caption=f"Uploading {title}...",
+                )
+                # find the file in the directory and zip it using the zip command
+                subprocess.run(["zip", "-r", f"{title}.zip", f"./torrents/{title}"])
+                # find the user who sent the query and send the file to him
+                await client.send_document(
+                    chat_id=callback_query.from_user.id,
+                    document=f"./{title}.zip",
+                    caption=f"{title}.zip",
+                    reply_to_message_id=callback_query.message.message_id,
+                )
+        except Exception as e:
+            # add a code for sending the error message to the owner
+            await callback_query.message.edit_caption(
+                caption=f"Error Occurred while fetching the magnet, Try Again !\nError info: {str(e)}",
+            )
     else:
         await callback_query.answer("Your session has expired. Please search again.")
 
