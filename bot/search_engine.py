@@ -49,7 +49,7 @@ def generate_url(title):
             url = last_url['url']
             if url:
                 random_str = generate_random_string(8)
-                url += "/" + title + f"/{random_str}/0/SEED/NONE/1?_={time.time()}"
+                url += "/" + title + f"/{random_str}/0/SEED/NONE/1?_={int(time.time())}"
                 results = get_movie_results(url)
                 if results:
                     return results
@@ -117,6 +117,5 @@ def save_url(url):
         with open(latest_url_file, 'w') as f:
             f.write(json.dumps([{"url": url}]))
 
-
-data = generate_url("Men%20in%20Black")
-print(data)
+# data = generate_url("Men%20in%20Black")
+# print(data)
