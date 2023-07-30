@@ -17,4 +17,3 @@ def get_poster(film):
         return image_url
     else:
         return False
-
